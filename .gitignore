@@ -1,0 +1,72 @@
+# ── Environment and secrets ───────────────────────────────────────────────
+.env
+.env.local
+
+# ── Python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# ── IDEs and editors ───────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS files ───────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ── Data files ─────────────────────────────────────────────────────────────
+# Uploaded PDFs and extracted content
+data/raw/*.pdf
+data/raw/*.json
+data/processed/
+data/embeddings/
+
+# Keep the directory structure
+!data/raw/.gitkeep
+
+# ── Logs ───────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Temporary files ────────────────────────────────────────────────────────
+*.tmp
+*.temp
+.cache/
