@@ -56,6 +56,8 @@ Thumbs.db
 # Uploaded PDFs and extracted content
 data/raw/*.pdf
 data/raw/*.json
+data/extracted/*.pdf
+data/extracted/*.json
 data/processed/
 data/embeddings/
 

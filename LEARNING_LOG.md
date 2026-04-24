@@ -78,3 +78,63 @@ Before wiring real retrieval or generation, verifying that the Streamlit process
 - Streamlit reruns the entire script on every interaction — `check_backend_health()` is therefore called on every page load, which is fine for development
 - The `key="question"` on the text input is important: it means the value will be accessible as `st.session_state.question` in Step 9 without any widget changes
 - Next step: add `POST /upload` to the FastAPI app to accept a PDF file and save it to `data/raw/`
+
+---
+
+## Step 3 — PDF upload endpoint
+
+### What I added
+- `POST /upload` route in `app/main.py` that accepts a single PDF file via multipart form upload
+- Extension validation — returns HTTP 400 if the uploaded file is not a `.pdf`
+- Saves the file to `data/raw/` using `shutil.copyfileobj` (streaming, no full file in memory)
+- Returns `filename`, `saved_to` path, and `size_bytes` read back from disk after writing
+
+### Why this matters
+The entire RAG pipeline begins here. Before any text can be extracted, chunked, embedded, or indexed, a PDF must land on disk in a known location. Every step from Step 4 onwards reads files from `data/raw/`.
+
+### Files changed
+- `app/main.py`: added `shutil`, `Path`, `HTTPException`, and `UploadFile` imports; added `RAW_DATA_DIR` constant with `mkdir` guard; added the `upload_pdf` function registered at `POST /upload`
+
+### How I tested
+- Started the server with `uvicorn app.main:app --reload --port 8000`
+- Used Swagger UI at `http://localhost:8000/docs` to upload a real PDF and confirmed a 200 response with `filename`, `saved_to`, and `size_bytes`
+- Ran `ls data/raw/` and confirmed the PDF appeared on disk
+- Uploaded a `.txt` file and confirmed a 400 response with `"Only .pdf files are accepted."`
+- Tested via `curl -X POST http://localhost:8000/upload -F "file=@/path/to/file.pdf"` and confirmed the JSON response
+
+### Notes to future me
+- The filename is taken directly from `file.filename` — if two PDFs share the same name the second will overwrite the first; a deduplication strategy (e.g. UUID prefix) can be added later
+- `RAW_DATA_DIR` is a hard-coded `Path` constant for now; it will eventually be read from `.env` via a config module
+- `shutil.copyfileobj` streams the upload in chunks so large PDFs do not blow up memory
+- Next step: read the saved PDF with `pypdf`, extract text page by page, and write a JSON file with one entry per page
+
+---
+
+## Step 4 — Extract text from a text PDF
+
+### What I added
+- `pipeline/extractor.py` — reads a PDF page by page using `pypdf` and returns a list of `{"page": N, "text": "..."}` dicts; also writes the result to `data/extracted/<stem>.json`
+- `POST /extract/{filename}` endpoint in `app/main.py` — receives a filename, looks it up in `data/raw/`, calls the extractor, and returns page count plus output path
+
+### Why this matters
+Text extraction is the first real transformation in the RAG pipeline. Before this step the PDF is just an opaque binary file. After this step the text is in a structured, human-readable JSON format that every subsequent step (chunking, embedding, indexing) can consume. Storing it as JSON means you can inspect what the model will actually see without running any more code.
+
+### Files changed
+- `pipeline/extractor.py`: created — `extract_text_from_pdf(pdf_path)` opens the PDF with `PdfReader`, iterates pages with 1-based numbering, calls `page.extract_text()`, strips whitespace, builds the list, and writes `data/extracted/<stem>.json`
+- `app/main.py`: added import of `extract_text_from_pdf`; added `POST /extract/{filename}` route with `.pdf` extension check and 404 guard for missing files
+
+### How I tested
+- Started FastAPI with `uvicorn app.main:app --reload --port 8000`
+- Uploaded a real multi-page PDF via `POST /upload` using Swagger UI at `http://localhost:8000/docs`
+- Called `POST /extract/{filename}` from Swagger UI (used the "Try it out" feature to avoid URL-encoding issues with spaces in the filename)
+- Confirmed response showed correct `pages_extracted` count and `output_file` path
+- Opened `data/extracted/<stem>.json` and verified the array contained one entry per page with readable text
+- Tested the 404 path by trying to extract a filename that had not been uploaded yet
+- Tested the 400 path by passing a non-`.pdf` filename
+
+### Notes to future me
+- `pypdf` only extracts the text layer baked into the PDF — scanned/image PDFs will return empty strings; OCR is a future step
+- Spaces in PDF filenames require URL-encoding (`%20`) in curl; Swagger UI handles this automatically and is the easiest way to test endpoints with spaces in path parameters
+- The JSON file on disk is the hand-off point to Step 5 — the chunker will read from `data/extracted/`
+- `EXTRACTED_DIR` is hard-coded; it will eventually move to a config module alongside `RAW_DATA_DIR`
+- Next step: split each page's text into overlapping chunks and save them as `data/chunks/<stem>.json`

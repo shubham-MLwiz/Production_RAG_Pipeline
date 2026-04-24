@@ -22,12 +22,12 @@ This is the canonical step order for the project.
 - add title, text box, placeholder response area
 - connect to backend health endpoint only
 
-## Step 3 — PDF upload endpoint
+## [x] Step 3 — PDF upload endpoint (`tag: step-03`)
 - add FastAPI endpoint to accept one PDF file
 - save uploaded PDF locally in `data/raw/`
 - return file metadata
 
-## Step 4 — Extract text from a text PDF
+## [x] Step 4 — Extract text from a text PDF (`tag: step-04`)
 - read uploaded PDF
 - extract page text
 - store extracted pages as JSON
