@@ -172,3 +172,38 @@ Embedding models and LLMs have token-length limits — a full PDF page can excee
 - `CHUNK_SIZE=200` and `CHUNK_OVERLAP=50` are word-count-based; 200 words ≈ 250–300 tokens, safely within any local embedding model's limit; these can be tuned in `chunker.py` without touching other files
 - `chunk_index` is a global counter across all pages, not per-page — this means every chunk has a unique ID which will be important when upserting into Qdrant
 - Next step: call Ollama's local embedding model once per chunk and save the resulting vectors alongside chunk metadata
+
+---
+
+## Step 6 — Generate embeddings locally with Ollama
+
+### What I added
+- `pipeline/embedder.py` — reads `data/chunks/<stem>.json`, sends chunks to Ollama's `/api/embed` endpoint in batches of 32, and writes each chunk's vector + metadata to `data/embeddings/<stem>.json`
+- `POST /embed/{filename}` endpoint in `app/main.py` — triggers the embedding run, returns chunk count, vector dimension, and output path; surfaces Ollama connectivity failures as HTTP 502
+- `notebooks/pipeline_verification.ipynb` — full step-by-step verification notebook covering Steps 1–6 with `check()` assertions, curl equivalents, on-disk inspection cells, and a pipeline summary cell
+- Updated `.env` and `.env.example` to use `mxbai-embed-large` (the model that was actually installed) instead of `nomic-embed-text`
+- Also fixed a bug in `pipeline/chunker.py` discovered during verification: the per-page chunking strategy meant overlap was silently dropped at every page boundary; refactored to flatten all pages into a single word stream first, then slide the window across the whole document so overlap is preserved even across page breaks (chunks reduced from 1129 → 904, all more uniformly sized)
+
+### Why this matters
+Retrieval works by comparing a question vector against all chunk vectors and finding the nearest matches. This step produces those chunk vectors. Nothing is indexed yet — that is Step 7 — but after this step every chunk has a 1024-dimensional float vector that a vector DB can search.
+
+### Files changed
+- `pipeline/embedder.py`: created — `_embed_batch(texts)` calls `POST /api/embed` on Ollama with a list of texts and returns a list of vectors; `embed_chunks(stem)` loops in `BATCH_SIZE=32` batches, zips vectors back onto chunk dicts, and writes `data/embeddings/<stem>.json`; reads `OLLAMA_BASE_URL` and `OLLAMA_EMBED_MODEL` from `.env`
+- `app/main.py`: added import of `embed_chunks`; added `POST /embed/{filename}` with `.pdf` check, `FileNotFoundError` → 404, generic `Exception` → 502 with Ollama hint; reports `vector_dimensions` in the response
+- `pipeline/chunker.py`: refactored from per-page sliding window to a single document-wide word stream with per-word page tags; overlap now crosses page boundaries correctly; `_split_into_chunks` helper removed (no longer needed)
+- `pyproject.toml`: replaced `pypdf>=4.2.0` with `pymupdf>=1.24.0` (carried over from Step 5 library switch)
+- `.env.example`: updated `OLLAMA_EMBED_MODEL` from `nomic-embed-text` to `mxbai-embed-large`
+- `notebooks/pipeline_verification.ipynb`: created — covers Steps 1–6 with labeled markdown headers, Python `httpx` calls, `check()` PASS/FAIL assertions, curl-equivalent comments, and a final artefact-state summary cell
+
+### How I tested
+- Ran `POST /embed/test_file.pdf` via Swagger UI; confirmed `total_chunks: 904`, `vector_dimensions: 1024`, output file at `data/embeddings/test_file.json`
+- Ran the Step 6c notebook cell to inspect the embeddings file on disk; confirmed every chunk had a 1024-dim float vector with non-zero values
+- Verified the chunker fix via Python: confirmed `overlap_preserved_across_page_boundary: True` at the first cross-page boundary (chunk 0 page 1 → chunk 1 page 3)
+- Verified Ollama model list via `GET /api/tags`; confirmed `mxbai-embed-large:latest` was available
+
+### Notes to future me
+- `BATCH_SIZE=32` is a pragmatic default — larger batches are faster but use more RAM; tunable at the top of `embedder.py`
+- The embedding run is slow (~2–5 min for 900+ chunks on CPU); results are cached in `data/embeddings/test_file.json` so you do not need to re-embed unless chunks change
+- `mxbai-embed-large` produces 1024-dimensional vectors — the Qdrant collection created in Step 7 must match this dimension exactly
+- The chunker page tag is the page of the **first word** in the chunk, not the last; a chunk may span two pages but only one page is cited; this is the standard convention and sufficient for Step 11 citations
+- Next step: start Qdrant locally, create a collection with `vector_size=1024`, and upsert all chunks from `data/embeddings/test_file.json`

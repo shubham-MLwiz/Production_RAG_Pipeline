@@ -38,7 +38,7 @@ This is the canonical step order for the project.
 - preserve page numbers
 - save chunk JSON locally
 
-## Step 6 — Generate embeddings locally with Ollama
+## [x] Step 6 — Generate embeddings locally with Ollama (`tag: step-06`)
 - call local embedding model
 - generate one vector per chunk
 - save vectors + chunk metadata

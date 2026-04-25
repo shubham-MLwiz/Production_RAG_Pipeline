@@ -35,6 +35,7 @@ htmlcov/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+notebooks/*.ipynb
 
 # ── IDEs and editors ───────────────────────────────────────────────────────
 .vscode/

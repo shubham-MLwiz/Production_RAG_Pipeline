@@ -57,3 +57,17 @@ Exactly one next step.
 - Do **not** propose commit/tag commands yet unless I explicitly ask to finalize the step.
 - If the requested step is not yet testable, say so clearly.
 - Optimize for learning clarity first.
+
+## Notebook update requirement
+
+After implementing a step, **always append new cells to `notebooks/pipeline_verification.ipynb`** to cover the step's verification.
+
+### Rules for notebook cells
+- Add a `markdown` header cell that names the step, states its prerequisites, and lists expected outputs.
+- For every new API endpoint: add a Python cell that calls it via `httpx` and runs `check()` assertions on the response.
+- For every artifact written to disk (JSON files, etc.): add a Python cell that reads the file and asserts its structure.
+- For expected error cases (missing file → 404, wrong type → 400, etc.): add a separate cell per error case.
+- Prefix each cell's first line with a comment showing the equivalent `curl` command where applicable.
+- Keep cells independently runnable — re-use the `BACKEND_URL`, `TEST_PDF`, `stem`, and `PROJECT_ROOT` variables defined in Section 1.
+- Do **not** add cells for future steps. Only add cells for the step being implemented.
+- Slow steps (e.g. embedding generation) must include a `⚠️` warning in the markdown cell stating approximate runtime and noting that results are cached on disk.

@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, UploadFile
 
 from pipeline.chunker import chunk_extracted_file
+from pipeline.embedder import embed_chunks
 from pipeline.extractor import extract_text_from_pdf
 
 # Directory where uploaded PDFs will be saved.
@@ -94,4 +95,43 @@ def chunk_pdf(filename: str):
         "filename": filename,
         "total_chunks": len(chunks),
         "output_file": f"data/chunks/{stem}.json",
+    }
+
+
+@app.post("/embed/{filename}")
+def embed_pdf(filename: str):
+    """
+    Generate embeddings for all chunks of a previously chunked PDF.
+
+    The chunks JSON must already exist in data/chunks/.
+    Run /chunk/{filename} first if it does not.
+    Embeddings are saved to data/embeddings/<stem>.json.
+
+    Note: this may take a few minutes for large PDFs — each batch of 32 chunks
+    is sent to the local Ollama embedding model as a single HTTP request.
+    """
+    if not filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only .pdf files are accepted.")
+
+    stem = Path(filename).stem
+
+    try:
+        enriched = embed_chunks(stem)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        # Ollama may not be running or the model may not be pulled.
+        raise HTTPException(
+            status_code=502,
+            detail=f"Embedding failed: {exc}. Is Ollama running?",
+        ) from exc
+
+    # Report the embedding dimension so the caller knows what to expect.
+    vector_dim = len(enriched[0]["embedding"]) if enriched else 0
+
+    return {
+        "filename": filename,
+        "total_chunks": len(enriched),
+        "vector_dimensions": vector_dim,
+        "output_file": f"data/embeddings/{stem}.json",
     }
