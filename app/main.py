@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from pipeline.chunker import chunk_extracted_file
 from pipeline.embedder import embed_chunks
 from pipeline.extractor import extract_text_from_pdf
+from pipeline.indexer import index_embeddings
 
 # Directory where uploaded PDFs will be saved.
 RAW_DATA_DIR = Path("data/raw")
@@ -134,4 +135,39 @@ def embed_pdf(filename: str):
         "total_chunks": len(enriched),
         "vector_dimensions": vector_dim,
         "output_file": f"data/embeddings/{stem}.json",
+    }
+
+
+@app.post("/index/{filename}")
+def index_pdf(filename: str):
+    """
+    Upsert all chunk vectors for a previously embedded PDF into Qdrant.
+
+    The embeddings JSON must already exist in data/embeddings/.
+    Run /embed/{filename} first if it does not.
+
+    Safe to call multiple times — upsert is idempotent.
+    """
+    if not filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only .pdf files are accepted.")
+
+    stem = Path(filename).stem
+
+    try:
+        total = index_embeddings(stem)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        # Collection vector-size mismatch
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Qdrant indexing failed: {exc}. Is Qdrant running?",
+        ) from exc
+
+    return {
+        "filename": filename,
+        "indexed_chunks": total,
+        "collection": "rag_chunks",
     }

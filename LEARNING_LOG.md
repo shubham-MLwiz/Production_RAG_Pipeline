@@ -207,3 +207,35 @@ Retrieval works by comparing a question vector against all chunk vectors and fin
 - `mxbai-embed-large` produces 1024-dimensional vectors — the Qdrant collection created in Step 7 must match this dimension exactly
 - The chunker page tag is the page of the **first word** in the chunk, not the last; a chunk may span two pages but only one page is cited; this is the standard convention and sufficient for Step 11 citations
 - Next step: start Qdrant locally, create a collection with `vector_size=1024`, and upsert all chunks from `data/embeddings/test_file.json`
+
+---
+
+## Step 7 — Add Qdrant and index chunks
+
+### What I added
+- `pipeline/indexer.py` — connects to a local Qdrant instance, creates the `rag_chunks` collection if it doesn't exist (with `vector_size=1024`, `distance=Cosine`), and upserts all chunk vectors + metadata from `data/embeddings/<stem>.json` in batches of 100
+- `POST /index/{filename}` endpoint in `app/main.py` — triggers the indexing run; returns `indexed_chunks` and `collection` name; surfaces `FileNotFoundError` as 404, vector-size mismatch as 409, and Qdrant connectivity errors as 502
+- Qdrant started via Docker: `docker run -d --name qdrant -p 6333:6333 qdrant/qdrant`
+- Updated `notebooks/pipeline_verification.ipynb` — added Step 7 cells: Qdrant health check, API index trigger, collection state assertion via REST, point payload spot-check, error case; also updated the pipeline summary cell to include Qdrant point count
+
+### Why this matters
+The embeddings JSON on disk is not searchable — it's just a flat array. Qdrant is the vector index that makes similarity search fast. Once chunks are upserted as Qdrant points, Step 8 can embed a question and retrieve the most relevant chunks in milliseconds without scanning all 904 vectors manually.
+
+### Files changed
+- `pipeline/indexer.py`: created — `_get_client()` returns a configured `QdrantClient`; `_ensure_collection()` creates the collection or validates the existing one's vector size; `index_embeddings(stem)` loads the embeddings JSON, builds `PointStruct` objects (id=chunk_index, vector=embedding, payload={text, page, source}), and upserts them in batches of 100
+- `app/main.py`: added import of `index_embeddings`; added `POST /index/{filename}` with three error cases (404 / 409 / 502)
+- `notebooks/pipeline_verification.ipynb`: added five Step 7 cells (health check, index API call, collection REST check, point payload spot-check, error case) and extended the pipeline summary cell to show Qdrant point count
+
+### How I tested
+- Started Qdrant with `docker run -d --name qdrant -p 6333:6333 qdrant/qdrant` and confirmed `healthz check passed`
+- Ran `index_embeddings('test_file')` directly in Python — confirmed 904/904 chunks indexed and `collection points_count: 904, vector_size: 1024`
+- Ran `POST /index/test_file.pdf` a second time via Swagger UI — confirmed it returned 904 again (idempotent upsert works)
+- Fetched `GET http://localhost:6333/collections/rag_chunks/points/0` directly and confirmed payload keys `text`, `page`, `source` were present
+- Tested `POST /index/nonexistent.pdf` — confirmed HTTP 404 with correct error message
+
+### Notes to future me
+- Qdrant data is stored inside the Docker container by default — it is lost if the container is removed; for persistence, add `-v $(pwd)/qdrant_storage:/qdrant/storage` to the Docker run command
+- `chunk_index` is used as the Qdrant point `id` (integer) — this means re-running `/index` after re-embedding is safe (same ids, upsert overwrites); but if chunk count changes between runs (e.g. after re-chunking), old points with higher ids remain until the collection is deleted and recreated
+- Cosine distance is the right choice for text embeddings — it measures directional similarity and is insensitive to vector magnitude
+- The `source` field in the payload (= stem of the PDF filename) will let Step 8 filter results by source document when multiple PDFs are indexed
+- Next step: embed an incoming question with Ollama and query Qdrant for the top-k nearest chunk payloads — no generation yet

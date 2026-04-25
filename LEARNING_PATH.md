@@ -43,7 +43,7 @@ This is the canonical step order for the project.
 - generate one vector per chunk
 - save vectors + chunk metadata
 
-## Step 7 — Add Qdrant and index chunks
+## [x] Step 7 — Add Qdrant and index chunks (`tag: step-07`)
 - start local Qdrant
 - create collection
 - upsert chunk vectors + metadata
