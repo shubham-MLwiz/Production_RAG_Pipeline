@@ -23,6 +23,7 @@ This repository is a **local-first RAG system for text PDFs** using:
 - **Streamlit** for UI
 - **Ollama** for local LLM + local embeddings
 - **Qdrant** for vector storage
+- **PyMuPDF (`fitz`)** for PDF text extraction — preferred over `pypdf` or `pdfplumber` because it uses the C-based MuPDF engine, correctly reconstructs character-spaced text, preserves reading order across multi-column layouts, and natively detects tables via `page.find_tables()` (v1.23+); AGPL license is acceptable for non-commercial use
 - **Custom orchestration first**
 - **LangGraph later only when the workflow becomes meaningfully stateful or branching**
 

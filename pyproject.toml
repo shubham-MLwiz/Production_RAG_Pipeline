@@ -12,8 +12,10 @@ dependencies = [
     # UI
     "streamlit>=1.35.0",
 
-    # PDF text extraction
-    "pypdf>=4.2.0",
+    # PDF text extraction — PyMuPDF uses the C-based MuPDF engine for accurate
+    # space reconstruction, reading-order preservation, and native table detection.
+    # AGPL license; acceptable for non-commercial use.
+    "pymupdf>=1.24.0",
 
     # Vector store client
     "qdrant-client>=1.9.0",

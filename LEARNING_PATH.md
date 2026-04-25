@@ -33,7 +33,7 @@ This is the canonical step order for the project.
 - store extracted pages as JSON
 - no chunking yet
 
-## Step 5 — Chunk extracted text
+## [x] Step 5 — Chunk extracted text (`tag: step-05`)
 - split pages into chunks
 - preserve page numbers
 - save chunk JSON locally

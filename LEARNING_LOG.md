@@ -138,3 +138,37 @@ Text extraction is the first real transformation in the RAG pipeline. Before thi
 - The JSON file on disk is the hand-off point to Step 5 — the chunker will read from `data/extracted/`
 - `EXTRACTED_DIR` is hard-coded; it will eventually move to a config module alongside `RAW_DATA_DIR`
 - Next step: split each page's text into overlapping chunks and save them as `data/chunks/<stem>.json`
+
+---
+
+## Step 5 — Chunk extracted text
+
+### What I added
+- `pipeline/chunker.py` — splits extracted page text into fixed-size, overlapping word-level chunks; each chunk carries its source page number and a global `chunk_index`; writes output to `data/chunks/<stem>.json`
+- `POST /chunk/{filename}` endpoint in `app/main.py` — accepts a PDF filename, resolves the stem, calls `chunk_extracted_file`, and returns total chunk count and output path
+- Also switched the PDF extraction library from `pypdf` to **PyMuPDF (`fitz`)** after discovering that `pypdf` merges words in character-spaced PDFs; PyMuPDF correctly reconstructs spaces and handles tables natively
+
+### Why this matters
+Embedding models and LLMs have token-length limits — a full PDF page can exceed them. Splitting into small, overlapping chunks means each unit fits inside the model's context window. The overlap (50 words by default) prevents a meaningful sentence from being cut cleanly at a chunk boundary. Attaching the page number to every chunk is what will make chunk-level citations possible later.
+
+### Files changed
+- `pipeline/chunker.py`: created — `_split_into_chunks(text, chunk_size, overlap)` slides a word-level window across the text; `chunk_extracted_file(stem)` loads `data/extracted/<stem>.json`, calls the splitter per page, accumulates a flat chunk list with a global `chunk_index`, and writes `data/chunks/<stem>.json`; constants `CHUNK_SIZE=200` and `CHUNK_OVERLAP=50` are at the top of the file for easy tuning
+- `app/main.py`: added import of `chunk_extracted_file`; added `POST /chunk/{filename}` route with `.pdf` extension guard and `FileNotFoundError` → HTTP 404 conversion
+- `pipeline/extractor.py`: replaced `pypdf` (`PdfReader` / `page.extract_text()`) with `pymupdf` (`fitz.open()` / `page.get_text("text")`) to fix merged-word output
+- `pyproject.toml`: replaced `pypdf>=4.2.0` with `pymupdf>=1.24.0`
+
+### How I tested
+- Ran `POST /extract/test_file.pdf` via Swagger UI after switching to pymupdf; confirmed words in `data/extracted/test_file.json` were properly spaced
+- Ran `POST /chunk/test_file.pdf` via Swagger UI; confirmed response showed `total_chunks: 1129` for a 544-page PDF (well above 1 chunk/page ratio, confirming chunking is working correctly)
+- Inspected `data/chunks/test_file.json` and confirmed consecutive chunks share the last ~50 words, `page` numbers advance correctly, and no chunk exceeds ~200 words
+- Ran extraction and chunking directly in Python via `.venv/bin/python3 -c "..."` — confirmed 544 pages extracted and 1129 chunks produced
+- Tested the 404 error path by calling `/chunk/nonexistent.pdf`
+
+### Notes to future me
+- **PDF library comparison** — three libraries were evaluated during this step:
+  - `pypdf`: simplest API, but merges words in character-spaced PDFs (no spaces reconstructed) — not usable for this document type
+  - `pdfplumber`: better than `pypdf` for spacing, but table detection is heuristic and fragile with borderless or complex tables
+  - `pymupdf (fitz)`: best overall — uses the C-based MuPDF engine, correctly reconstructs character-spaced text, preserves multi-column reading order, and has native table detection via `page.find_tables()` (v1.23+); AGPL license is acceptable for non-commercial use; **this is now the project standard**
+- `CHUNK_SIZE=200` and `CHUNK_OVERLAP=50` are word-count-based; 200 words ≈ 250–300 tokens, safely within any local embedding model's limit; these can be tuned in `chunker.py` without touching other files
+- `chunk_index` is a global counter across all pages, not per-page — this means every chunk has a unique ID which will be important when upserting into Qdrant
+- Next step: call Ollama's local embedding model once per chunk and save the resulting vectors alongside chunk metadata

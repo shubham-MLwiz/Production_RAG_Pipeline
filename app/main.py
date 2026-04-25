@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile
 
+from pipeline.chunker import chunk_extracted_file
 from pipeline.extractor import extract_text_from_pdf
 
 # Directory where uploaded PDFs will be saved.
@@ -67,4 +68,30 @@ def extract_pdf(filename: str):
         "filename": filename,
         "pages_extracted": len(pages),
         "output_file": f"data/extracted/{pdf_path.stem}.json",
+    }
+
+
+@app.post("/chunk/{filename}")
+def chunk_pdf(filename: str):
+    """
+    Chunk the extracted text for a previously extracted PDF.
+
+    The extraction JSON must already exist in data/extracted/.
+    Run /extract/{filename} first if it does not.
+    Chunks are saved to data/chunks/<stem>.json.
+    """
+    if not filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only .pdf files are accepted.")
+
+    stem = Path(filename).stem
+
+    try:
+        chunks = chunk_extracted_file(stem)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return {
+        "filename": filename,
+        "total_chunks": len(chunks),
+        "output_file": f"data/chunks/{stem}.json",
     }
