@@ -54,7 +54,7 @@ This is the canonical step order for the project.
 - return retrieved chunks only
 - no generation yet
 
-## Step 9 — Show retrieval results in Streamlit
+## [x] Step 9 — Show retrieval results in Streamlit (`tag: step-09`)
 - ask question from UI
 - show retrieved chunks and scores
 - no answer generation yet

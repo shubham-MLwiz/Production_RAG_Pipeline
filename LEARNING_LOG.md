@@ -268,3 +268,35 @@ Steps 1–7 were all ingestion — data flowing *into* the system. Step 8 is the
 - The `query_points` method replaced the older `search` method in qdrant-client ≥1.7; if you see `AttributeError: 'QdrantClient' object has no attribute 'query_points'` the client version is too old
 - Meta questions ("What is the main topic?"), summary requests, and multi-hop questions are known hard cases for top-k dense retrieval alone — these are addressed in later steps (Step 12 for refusal, Step 21 for CRAG/decomposition)
 - Next step: wire `GET /retrieve` into the Streamlit UI so you can type a question in the browser and see the matched chunks with scores — still no LLM answer
+
+---
+
+## Step 9 — Show retrieval results in Streamlit
+
+### What I added
+- `retrieve_chunks(query, top_k)` helper in `ui/app.py` — makes a `GET /retrieve` HTTP call and returns the results list; raises `RuntimeError` on any non-200 response so the UI can show an error banner instead of crashing
+- A **Search** button (`st.button`) that triggers retrieval only when clicked — not on every keystroke
+- A results section that renders each returned chunk as an expandable `st.expander` card showing rank, score, page, source, and a 300-character text preview; first card starts open, rest collapsed
+- Empty-question guard — shows a yellow `st.warning` banner without making an HTTP call
+- Backend-error guard — catches `RuntimeError` from `retrieve_chunks` and shows a red `st.error` banner
+- Two new Step 9 notebook cells: Streamlit reachability check, and a cell that calls `GET /retrieve` directly and simulates the card-header + preview rendering the UI uses
+
+### Why this matters
+Retrieval is now visible in the browser without curl or a notebook. You can type real questions and immediately judge whether the returned chunks are relevant — before the LLM is involved. This is the quality checkpoint: if the chunks look wrong, the problem is in retrieval (embedding model, chunk size, top-k) and the place to fix it is here, not after generation is wired in.
+
+### Files changed
+- `ui/app.py`: added `TOP_K = 5` constant; replaced the placeholder `st.caption` with a full results section; added `retrieve_chunks(query, top_k)` helper; added `st.button`, `st.spinner`, `st.expander` rendering loop, empty-string guard, and error banner
+- `notebooks/pipeline_verification.ipynb`: added Step 9 markdown header cell and two code cells (Streamlit reachability check; retrieve call + card-header simulation assertions)
+
+### How I tested
+- Ran `streamlit run ui/app.py` and opened `http://localhost:8501`
+- Typed a question and clicked **Search** — confirmed 5 expandable cards appeared with headers showing rank, score, page, source; first card open by default
+- Clicked Search with an empty text input — confirmed yellow warning banner appeared with no HTTP call made
+- Ran the two new Step 9 notebook cells — both passed assertions
+
+### Notes to future me
+- `st.button` returns `True` only on the single frame after a click; wrapping retrieval inside `if search_clicked:` prevents repeated Ollama calls on every Streamlit rerender
+- The 300-char text preview is a UI tradeoff — enough to judge relevance at a glance; full chunk text is always available via the API or notebook
+- `TOP_K = 5` is defined at module level; it is intentionally not a UI slider yet — that is extra complexity for a later step
+- The `retrieve_chunks` parameter was renamed from `question` to `query` to avoid shadowing the `question` variable at module scope (the `st.text_input` return value)
+- Next step: call Ollama LLM with the retrieved chunks as context and return a generated answer — first time the system produces prose
