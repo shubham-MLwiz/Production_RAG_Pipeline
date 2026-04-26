@@ -48,7 +48,7 @@ This is the canonical step order for the project.
 - create collection
 - upsert chunk vectors + metadata
 
-## Step 8 — Retrieval-only endpoint
+## [x] Step 8 — Retrieval-only endpoint (`tag: step-08`)
 - query embeddings
 - retrieve top-k chunks from Qdrant
 - return retrieved chunks only

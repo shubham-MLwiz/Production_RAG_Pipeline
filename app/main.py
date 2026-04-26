@@ -7,6 +7,7 @@ from pipeline.chunker import chunk_extracted_file
 from pipeline.embedder import embed_chunks
 from pipeline.extractor import extract_text_from_pdf
 from pipeline.indexer import index_embeddings
+from pipeline.retriever import retrieve
 
 # Directory where uploaded PDFs will be saved.
 RAW_DATA_DIR = Path("data/raw")
@@ -170,4 +171,38 @@ def index_pdf(filename: str):
         "filename": filename,
         "indexed_chunks": total,
         "collection": "rag_chunks",
+    }
+
+
+@app.get("/retrieve")
+def retrieve_chunks(question: str, top_k: int = 5):
+    """
+    Embed a question and return the top-k most relevant chunks from Qdrant.
+
+    Query parameters:
+      - question: the user's question text (required)
+      - top_k:    how many chunks to return (default 5, max sensible value ~20)
+
+    Returns the matched chunks with their similarity scores, page numbers,
+    and source document. No answer generation — retrieval only.
+    """
+    if not question.strip():
+        raise HTTPException(status_code=400, detail="question must not be empty.")
+
+    if top_k < 1 or top_k > 50:
+        raise HTTPException(status_code=400, detail="top_k must be between 1 and 50.")
+
+    try:
+        chunks = retrieve(question, top_k=top_k)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Retrieval failed: {exc}. Are Ollama and Qdrant running?",
+        ) from exc
+
+    return {
+        "question":      question,
+        "top_k":         top_k,
+        "results_count": len(chunks),
+        "results":       chunks,
     }

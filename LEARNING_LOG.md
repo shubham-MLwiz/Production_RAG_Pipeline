@@ -239,3 +239,32 @@ The embeddings JSON on disk is not searchable — it's just a flat array. Qdrant
 - Cosine distance is the right choice for text embeddings — it measures directional similarity and is insensitive to vector magnitude
 - The `source` field in the payload (= stem of the PDF filename) will let Step 8 filter results by source document when multiple PDFs are indexed
 - Next step: embed an incoming question with Ollama and query Qdrant for the top-k nearest chunk payloads — no generation yet
+
+---
+
+## Step 8 — Retrieval-only endpoint
+
+### What I added
+- `pipeline/retriever.py` — embeds a question string with Ollama (same model as the chunks) and queries Qdrant for the top-k closest chunk vectors; returns a plain list of dicts with `chunk_index`, `score`, `text`, `page`, and `source`
+- `GET /retrieve?question=...&top_k=N` endpoint in `app/main.py` — validates inputs (empty question → 400, `top_k` out of [1–50] → 400, missing param → 422), delegates to `retrieve()`, and returns question echo, `top_k` used, `results_count`, and `results` list
+- Four new Step 8 verification cells in `notebooks/pipeline_verification.ipynb` — happy path (basic retrieval, field structure, score ordering), `top_k` variants, error cases, and a direct Python call that bypasses the API
+
+### Why this matters
+Steps 1–7 were all ingestion — data flowing *into* the system. Step 8 is the first retrieval step: data flowing *out* in response to a question. This is the moment you can start evaluating whether the embedding + Qdrant pipeline is actually finding relevant content. You can inspect returned chunks, read their text, and judge quality before adding any LLM generation on top.
+
+### Files changed
+- `pipeline/retriever.py`: created — `_embed_query(question)` posts to Ollama `/api/embed` and returns one 1024-dim float vector; `retrieve(question, top_k)` builds the Qdrant client, calls `client.query_points()` with `with_payload=True`, and maps results to plain dicts with score rounded to 4 decimal places
+- `app/main.py`: added import of `retrieve`; added `GET /retrieve` endpoint with two guard checks (empty string, out-of-range `top_k`) and a catch-all 502 for Ollama/Qdrant failures
+- `notebooks/pipeline_verification.ipynb`: added Step 8 markdown header cell and four code cells (basic happy-path assertions, `top_k` variants, error case assertions, direct `retrieve()` function call)
+
+### How I tested
+- Ran `retrieve('What is the main topic of this document?', top_k=2)` directly in Python via `.venv/bin/python3 -c "..."` — confirmed 2 results returned, score ~0.52, page 514, source `test_file`
+- Confirmed import of `pipeline.retriever` with no errors
+- Verified qdrant-client version 1.17.1 supports `query_points` API
+
+### Notes to future me
+- The retriever always returns *something* — even when the question has nothing to do with the document. Scores of 0.3–0.5 typically indicate low relevance. A score threshold (e.g. refuse if max score < 0.4) is part of Step 12
+- `GET` was chosen over `POST` for the retrieve endpoint because the question is a filter/query parameter with no side effects — conventionally a GET; Step 10's generate endpoint will use POST (it changes state by triggering LLM inference)
+- The `query_points` method replaced the older `search` method in qdrant-client ≥1.7; if you see `AttributeError: 'QdrantClient' object has no attribute 'query_points'` the client version is too old
+- Meta questions ("What is the main topic?"), summary requests, and multi-hop questions are known hard cases for top-k dense retrieval alone — these are addressed in later steps (Step 12 for refusal, Step 21 for CRAG/decomposition)
+- Next step: wire `GET /retrieve` into the Streamlit UI so you can type a question in the browser and see the matched chunks with scores — still no LLM answer
