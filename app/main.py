@@ -2,10 +2,12 @@ import shutil
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from pipeline.chunker import chunk_extracted_file
 from pipeline.embedder import embed_chunks
 from pipeline.extractor import extract_text_from_pdf
+from pipeline.generator import generate_answer
 from pipeline.indexer import index_embeddings
 from pipeline.retriever import retrieve
 
@@ -205,4 +207,64 @@ def retrieve_chunks(question: str, top_k: int = 5):
         "top_k":         top_k,
         "results_count": len(chunks),
         "results":       chunks,
+    }
+
+
+# ── Request model for POST /generate ─────────────────────────────────────────
+
+class GenerateRequest(BaseModel):
+    question: str
+    top_k: int = 5
+
+
+@app.post("/generate")
+def generate(req: GenerateRequest):
+    """
+    Retrieve the most relevant chunks for a question, then generate an answer.
+
+    This is the first end-to-end RAG endpoint:
+      1. Embed the question with Ollama (same embedding model used for chunks).
+      2. Retrieve the top-k closest chunks from Qdrant.
+      3. Build a context prompt from those chunks.
+      4. Call the Ollama LLM to generate an answer grounded in that context.
+
+    Request body (JSON):
+      - question: the user's question (required)
+      - top_k:    how many chunks to retrieve (default 5)
+
+    Returns:
+      - question:    echoed back
+      - answer:      the LLM's generated answer
+      - chunks_used: number of chunks passed to the LLM
+      - chunks:      the retrieved chunks (for inspection / future citations)
+    """
+    if not req.question.strip():
+        raise HTTPException(status_code=400, detail="question must not be empty.")
+
+    if req.top_k < 1 or req.top_k > 50:
+        raise HTTPException(status_code=400, detail="top_k must be between 1 and 50.")
+
+    # Step 1 — retrieve
+    try:
+        chunks = retrieve(req.question, top_k=req.top_k)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Retrieval failed: {exc}. Are Ollama and Qdrant running?",
+        ) from exc
+
+    # Step 2 — generate
+    try:
+        answer = generate_answer(req.question, chunks)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Generation failed: {exc}. Is Ollama running with the LLM model pulled?",
+        ) from exc
+
+    return {
+        "question":    req.question,
+        "answer":      answer,
+        "chunks_used": len(chunks),
+        "chunks":      chunks,
     }

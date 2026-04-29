@@ -58,6 +58,13 @@ step-XX
 
 5. Output the exact git commands I should run next.
 
+6. Update `ARCHITECTURE.md`
+   - `ARCHITECTURE.md` lives at the project root and contains a Mermaid diagram of the full system
+   - After each step, update the diagram only if the step added a new component, a new data flow, or a new external service
+   - If nothing structurally changed (e.g. a UI polish step), state "no architecture change" and skip the update
+   - Keep the diagram minimal and accurate — only show components that have been built so far
+   - Do not add future/planned components to the diagram
+
 ## Git command style
 Use this exact style unless the branch name must change:
 
@@ -98,5 +105,8 @@ Provide one annotated tag name and description.
 ### 6. Git commands to run
 Provide the exact commands.
 
-### 7. What we will build next
+### 7. Architecture diagram update
+State whether `ARCHITECTURE.md` was updated and why, or why no change was needed.
+
+### 8. What we will build next
 Exactly one next step from `LEARNING_PATH.md`.

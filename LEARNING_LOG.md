@@ -300,3 +300,39 @@ Retrieval is now visible in the browser without curl or a notebook. You can type
 - `TOP_K = 5` is defined at module level; it is intentionally not a UI slider yet — that is extra complexity for a later step
 - The `retrieve_chunks` parameter was renamed from `question` to `query` to avoid shadowing the `question` variable at module scope (the `st.text_input` return value)
 - Next step: call Ollama LLM with the retrieved chunks as context and return a generated answer — first time the system produces prose
+
+---
+
+## Step 10 — Generate answer from retrieved chunks
+
+### What I added
+- `pipeline/generator.py` — builds a numbered context block from retrieved chunks, formats a grounding prompt instructing the LLM to answer only from the provided passages, POSTs to Ollama `/api/generate` with `stream=False`, and returns the plain-text answer
+- `POST /generate` endpoint in `app/main.py` — accepts `{question, top_k}` JSON body (Pydantic `GenerateRequest`), runs retrieval then generation in sequence, returns `{question, answer, chunks_used, chunks}`; surfaces Ollama failures as 502
+- `GenerateRequest` Pydantic model in `app/main.py` — validates the POST body; empty question → 400, `top_k` out of [1–50] → 400
+- Four new Step 10 notebook cells: Ollama LLM model check, full happy-path API call, direct Python call (with `load_dotenv(..., override=True)` workaround), error cases
+- Fixed `OLLAMA_LLM_MODEL` in `.env` and `.env.example` from `llama3` to `llama3.1` (the installed model)
+- Created `ARCHITECTURE.md` — living Mermaid diagram showing the full system data flow at Step 10
+
+### Why this matters
+This is the first time the system produces a natural-language answer. All previous steps were ingestion or retrieval. Adding generation closes the RAG loop: PDF → chunks → embeddings → Qdrant → retrieve → generate → answer. The grounding constraint in the prompt (`answer only from the context passages`) is what makes it RAG rather than open-domain generation.
+
+### Files changed
+- `pipeline/generator.py`: created — `_build_context(chunks)` formats numbered passages with page labels; `generate_answer(question, chunks)` builds the full prompt and calls Ollama `/api/generate` with `stream=False`; timeout 120 s to accommodate slow CPU generation
+- `app/main.py`: added import of `generate_answer` and `BaseModel`; added `GenerateRequest` Pydantic model; added `POST /generate` with two-stage error handling (retrieval 502, generation 502)
+- `.env`: updated `OLLAMA_LLM_MODEL` from `llama3` to `llama3.1`
+- `.env.example`: same update
+- `notebooks/pipeline_verification.ipynb`: added Step 10 markdown header and four code cells (model check, happy path API call, direct Python call with dotenv reload, error cases)
+- `ARCHITECTURE.md`: created — Mermaid diagram of the full pipeline at this checkpoint
+
+### How I tested
+- Ran `POST /generate` via Swagger UI (`http://localhost:8000/docs`) with `{"question": "What is the main topic of this document?", "top_k": 3}` — received a grounded answer
+- Ran Step 10b notebook cell (`POST /generate` via httpx) — all assertions passed
+- Ran Step 10c notebook cell (direct `generate_answer()` Python call) — discovered `OLLAMA_LLM_MODEL` was stale in the kernel (`llama3` instead of `llama3.1`); fixed by adding `load_dotenv(..., override=True)` before module reload; cell then passed
+- Ran Step 10d notebook cell — confirmed 422 / 400 / 400 error responses for missing, empty, and out-of-range inputs
+
+### Notes to future me
+- `stream=False` is simpler for learning but does not allow showing tokens as they arrive in the UI; switch to streaming in a later step if desired
+- `load_dotenv(override=False)` is the default — it does not overwrite env vars already in `os.environ`; if you update `.env` mid-kernel-session, always call `load_dotenv(..., override=True)` before reloading the module, or restart the kernel
+- The fallback message in the prompt (`"I don't have enough information..."`) is a soft refusal; a proper refusal with a score threshold is Step 12
+- The prompt template is a module-level constant in `generator.py` — easy to iterate on without touching any other file
+- Next step: attach `chunk_index`, `page`, and `source` to each claim in the answer so the user knows exactly which passage it came from (Step 11 — chunk-level citations)

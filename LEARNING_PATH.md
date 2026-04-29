@@ -59,7 +59,7 @@ This is the canonical step order for the project.
 - show retrieved chunks and scores
 - no answer generation yet
 
-## Step 10 — Generate answer from retrieved chunks
+## [x] Step 10 — Generate answer from retrieved chunks (`tag: step-10`)
 - call Ollama LLM
 - answer only from retrieved context
 - show answer in API response
