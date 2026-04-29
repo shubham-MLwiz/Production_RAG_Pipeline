@@ -262,9 +262,23 @@ def generate(req: GenerateRequest):
             detail=f"Generation failed: {exc}. Is Ollama running with the LLM model pulled?",
         ) from exc
 
+    # Build a compact citation list.
+    # The ref number (1, 2, 3…) matches the [N] numbers in the LLM context
+    # block, so the caller can map "[1] in the answer" → citation ref=1.
+    citations = [
+        {
+            "ref":         i,
+            "chunk_index": c["chunk_index"],
+            "page":        c["page"],
+            "source":      c["source"],
+        }
+        for i, c in enumerate(chunks, start=1)
+    ]
+
     return {
         "question":    req.question,
         "answer":      answer,
         "chunks_used": len(chunks),
+        "citations":   citations,
         "chunks":      chunks,
     }

@@ -64,7 +64,7 @@ This is the canonical step order for the project.
 - answer only from retrieved context
 - show answer in API response
 
-## Step 11 — Add chunk-level citations
+## [x] Step 11 — Add chunk-level citations (`tag: step-11`)
 - attach chunk ids, page numbers, source file to answer
 - show citations in UI
 

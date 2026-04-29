@@ -336,3 +336,36 @@ This is the first time the system produces a natural-language answer. All previo
 - The fallback message in the prompt (`"I don't have enough information..."`) is a soft refusal; a proper refusal with a score threshold is Step 12
 - The prompt template is a module-level constant in `generator.py` — easy to iterate on without touching any other file
 - Next step: attach `chunk_index`, `page`, and `source` to each claim in the answer so the user knows exactly which passage it came from (Step 11 — chunk-level citations)
+
+---
+
+## Step 11 — Add chunk-level citations
+
+### What I added
+- `citations` key in the `POST /generate` response — a list of `{ref, chunk_index, page, source}` where `ref` matches the `[N]` number the LLM uses in its answer context block
+- `call_generate()` helper in `ui/app.py` — POSTs to `/generate` with a 180 s timeout and returns the full response dict
+- **Generate Answer** button added alongside the existing Search Chunks button in a two-column layout; the two buttons use `if / elif` so their outputs are mutually exclusive
+- Answer displayed in `st.info` box; Sources section below it with one `st.expander` per citation (collapsed by default)
+- Expander label shows `[N] score 0.XXXX · page P · chunk C · source` — score is taken directly from `result["chunks"]` (already fetched by the retriever, no extra API call)
+- Full chunk text shown inside each expander when opened
+- Three new notebook cells added: Step 11a (citations present and well-formed), Step 11b (citation structure spot-checks), Step 11c (manual UI checklist markdown)
+
+### Why this matters
+Without citations the user has no way to verify the answer or trace a claim back to its source passage. Adding explicit `[N]` refs that map to chunk/page/source metadata closes the transparency loop: the user can open any source expander and read the exact text that fed the LLM. The score in the label also surfaces retrieval confidence, letting the user judge how well-grounded each source is.
+
+### Files changed
+- `app/main.py`: added a `citations` list built from `enumerate(chunks, start=1)` before the return statement in `POST /generate`; each entry carries `ref`, `chunk_index`, `page`, `source`; ref numbering is kept deliberately identical to the `[N]` numbering in `_build_context()` so the mapping is stable
+- `ui/app.py`: added `call_generate()` HTTP helper; replaced single `Search` button with two-column `Search Chunks` / `Generate Answer` layout; added answer + Sources display in the `elif generate_clicked` branch; Sources section builds a `chunk_data_by_index` lookup from `result["chunks"]` (score + text) and renders one collapsed expander per citation
+- `notebooks/pipeline_verification.ipynb`: added Step 11 markdown header cell, Step 11a API assertions cell, Step 11b structure spot-check cell, Step 11c manual UI checklist markdown cell
+
+### How I tested
+- Ran Step 11a notebook cell — confirmed `citations` key present, length equals `top_k=3`, all fields present
+- Ran Step 11b notebook cell — confirmed ref numbers are 1-based sequential, all chunk_indices exist in the chunks list
+- Verified manually in Streamlit: Generate Answer button appeared, answer displayed in blue info box, Sources section showed 5 collapsed expanders each with score/page/chunk/source in the header; opened one expander and confirmed full chunk text was present
+
+### Notes to future me
+- The `ref` number in citations is positional (order returned by retriever); it is NOT a semantic notion of "most important" — just the rank order from Qdrant
+- Score visible in the Sources header is the raw cosine similarity; once a refusal threshold is added (Step 12), a low score here will mean the answer was refused entirely
+- `result["chunks"]` is already returned by `/generate` so the UI never needs a second HTTP call to get text or scores — keep it this way
+- The Sources expanders are collapsed by default; resist the temptation to auto-expand them — it would flood the page with text
+- Next step: add a minimum-score threshold — if the best retrieved chunk scores below ~0.35, skip generation and return a safe refusal message (Step 12)
